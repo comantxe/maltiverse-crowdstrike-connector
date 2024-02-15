@@ -147,13 +147,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--crowdstrike_client_id",
         dest="crowdstrike_client_id",
-        default=None,
+        required=True,
         help="Specify the Crowdstrike CLIENT_ID.",
     )
     parser.add_argument(
         "--crowdstrike_client_secret",
         dest="crowdstrike_client_secret",
-        default=None,
+        required=True,
         help="Specifies Crowdstrike CLIENT_SECRET.",
     )
 
