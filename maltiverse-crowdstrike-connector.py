@@ -139,12 +139,6 @@ if __name__ == "__main__":
         help="Specifies Maltiverse API KEY. Required",
     )
     parser.add_argument(
-        "--feed_id",
-        dest="feed_id",
-        required=True,
-        help="Specifies Maltiverse Feed ID to retrieve. Required",
-    )
-    parser.add_argument(
         "--crowdstrike_client_id",
         dest="crowdstrike_client_id",
         required=True,
@@ -156,7 +150,18 @@ if __name__ == "__main__":
         required=True,
         help="Specifies Crowdstrike CLIENT_SECRET.",
     )
-
+    parser.add_argument(
+        "--feed_id",
+        dest="feed_id",
+        required=True,
+        help="Specifies Maltiverse Feed ID to upload to CrowdStrike Falcon cloud. Required",
+    )
+    parser.add_argument(
+        "--action",
+        dest="action",
+        default="detect",
+        help="Specifies the action that applies to the uploading indicators. Default: detect",
+    )
     arguments = parser.parse_args()
 
     handler = MaltiverseCrowdStrikeHandler(
@@ -165,5 +170,7 @@ if __name__ == "__main__":
         arguments.crowdstrike_client_secret,
     )
 
-    res = handler.upload_maltiverse_feed_to_crowdstrike(arguments.feed_id)
+    res = handler.upload_maltiverse_feed_to_crowdstrike(
+        arguments.feed_id, action=arguments.action
+    )
     print(json.dumps(res, indent=4))
