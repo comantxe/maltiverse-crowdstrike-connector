@@ -12,7 +12,7 @@ import argparse
 import requests
 import json
 from datetime import datetime, timedelta
-from falconpy import APIHarnessV2
+from falconpy import APIHarnessV2, IOC
 
 
 class MaltiverseCrowdStrikeHandler:
@@ -26,6 +26,7 @@ class MaltiverseCrowdStrikeHandler:
             client_id=client_id,
             client_secret=client_secret,
         )
+        self.falcon_ioc = IOC(client_id=client_id, client_secret=client_secret)
 
     def get_feed_metadata_from_maltiverse(self, feed_id):
         """
@@ -89,17 +90,45 @@ class MaltiverseCrowdStrikeHandler:
                 "comment": full_feed["comment"],
                 "indicators": full_feed["indicators"][first_element:last_element],
             }
-            print(json.dumps(chunk, indent=4))
-            print()
             ret = self.falcon.command(
                 "indicator_create_v1",
                 retrodetects=False,
-                ignore_warnings=False,
+                ignore_warnings=True,
                 body=chunk,
             )
-            print(ret)
+
+            if ret["status_code"] == 400:
+                for element in ret["body"]["resources"]:
+                    if element["message_type"] == "warning" and element[
+                        "message"
+                    ].startswith("Warning: Duplicate type:"):
+                        res_delete = self.falcon_ioc.indicator_delete(
+                            filter="value:'" + element["value"] + "'"
+                        )
+                        if res_delete["status_code"] == 200:
+                            print("Deleted: " + element["value"])
+                        else:
+                            print("Error deleting: " + element["value"])
+                            if "errors" in res_delete:
+                                print(res_delete["errors"])
+
+                ret = self.falcon.command(
+                    "indicator_create_v1",
+                    retrodetects=False,
+                    ignore_warnings=True,
+                    body=chunk,
+                )
+                print(json.dumps(ret, indent=4))
+
             ret_array.append(ret)
         return ret_array
+
+    def delete_expired_iocs_from_crowdstrike(self):
+        aid = self.falcon_ioc.indicator_delete_v1(
+            filter="expired:true", comment="Delete expired IOCs"
+        )
+        print("DELETED EXPIRED IOCs")
+        print(aid)
 
     def convert_obj_maltiverse_to_crowdstrike(
         self, maltiverse_ioc, action="detect", expiration_days=1, tag=[]
@@ -110,7 +139,13 @@ class MaltiverseCrowdStrikeHandler:
         ret = []
         expiration_time = None
         if expiration_days:
-            expiration_datetime = datetime.utcnow() + timedelta(days=expiration_days)
+            expiration_datetime = (
+                datetime.utcnow()
+                + timedelta(days=expiration_days)
+                - timedelta(
+                    minutes=1
+                )  # Sustract 1 minute to expire iocs before next iteration
+            )
             expiration_time = expiration_datetime.isoformat() + "Z"
 
         crowdstrike_ioc_type = None
@@ -205,6 +240,9 @@ if __name__ == "__main__":
         arguments.crowdstrike_client_secret,
         base_url=arguments.crowdstrike_base_url,
     )
+
+    res = handler.delete_expired_iocs_from_crowdstrike()
+    print(json.dumps(res, indent=4))
 
     res = handler.upload_maltiverse_feed_to_crowdstrike(
         arguments.feed_id, action=arguments.action
