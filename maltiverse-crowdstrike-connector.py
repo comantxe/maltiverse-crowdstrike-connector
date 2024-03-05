@@ -11,6 +11,7 @@
 import argparse
 import requests
 import json
+import time
 from datetime import datetime, timedelta
 from falconpy import APIHarnessV2, IOC
 
@@ -111,7 +112,7 @@ class MaltiverseCrowdStrikeHandler:
                             print("Error deleting: " + element["value"])
                             if "errors" in res_delete:
                                 print(res_delete["errors"])
-
+                time.sleep(10)
                 ret = self.falcon.command(
                     "indicator_create_v1",
                     retrodetects=False,
