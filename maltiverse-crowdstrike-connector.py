@@ -16,6 +16,9 @@ from datetime import datetime, timedelta
 from falconpy import APIHarnessV2, IOC
 
 
+IOC_EXPIRATION_DAYS = 1
+
+
 class MaltiverseCrowdStrikeHandler:
     def __init__(self, api_key, client_id, client_secret, base_url=None):
         self.api_key = api_key
@@ -125,14 +128,27 @@ class MaltiverseCrowdStrikeHandler:
         return ret_array
 
     def delete_expired_iocs_from_crowdstrike(self):
+        today = datetime.utcnow().isoformat() + "Z"
         aid = self.falcon_ioc.indicator_delete_v1(
-            filter="expired:true", comment="Delete expired IOCs"
+            # Now working as expected using 'filter':f"expiration:<='{today}'".
+            # Using 'filter':'expired:true' returns 200 status code but
+            # doesn't actually delete the expired IOCs.
+            filter=f"expiration:<='{today}'",
+            # filter="expired:true",
+            comment="Delete expired IOCs",
         )
-        print("DELETED EXPIRED IOCs")
-        print(aid)
+        if aid["status_code"] == 200:
+            print(f"DELETED IOCs with expiration <= {today}")
+        else:
+            print("Error deleting expired IoCs, check response:")
+        return aid
 
     def convert_obj_maltiverse_to_crowdstrike(
-        self, maltiverse_ioc, action="detect", expiration_days=1, tag=[]
+        self,
+        maltiverse_ioc,
+        action="detect",
+        expiration_days=IOC_EXPIRATION_DAYS,
+        tag=[],
     ):
         """
         Given a Maltiverse IoC returns a CrowdStrike IoC
@@ -224,8 +240,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--feed_id",
         dest="feed_id",
-        required=True,
-        help="Specifies Maltiverse Feed ID to upload to CrowdStrike Falcon cloud. Required",
+        help="Specifies Maltiverse Feed ID to upload to CrowdStrike Falcon cloud. Optional",
+    )
+    parser.add_argument(
+        "--delete-expired",
+        dest="delete_expired",
+        action="store_true",
+        default=False,
+        help="Specifies if expired IOCs should be deleted. Optional",
     )
     parser.add_argument(
         "--action",
@@ -242,10 +264,15 @@ if __name__ == "__main__":
         base_url=arguments.crowdstrike_base_url,
     )
 
-    res = handler.delete_expired_iocs_from_crowdstrike()
-    print(json.dumps(res, indent=4))
+    if arguments.delete_expired:
+        res = handler.delete_expired_iocs_from_crowdstrike()
+        print(json.dumps(res, indent=4))
 
-    res = handler.upload_maltiverse_feed_to_crowdstrike(
-        arguments.feed_id, action=arguments.action
-    )
-    print(json.dumps(res, indent=4))
+    if arguments.feed_id:
+        res = handler.upload_maltiverse_feed_to_crowdstrike(
+            arguments.feed_id, action=arguments.action
+        )
+        print(json.dumps(res, indent=4))
+
+    if not arguments.delete_expired and not arguments.feed_id:
+        print("No uploads were performed, use --feed-id to select a feed to upload")
