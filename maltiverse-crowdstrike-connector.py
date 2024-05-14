@@ -69,6 +69,24 @@ class MaltiverseCrowdStrikeHandler:
         }
         return response
 
+    def _indicator_has_error(self, indicator: dict) -> bool:
+        if indicator["message_type"] == "error":
+            print(
+                f"  - Detected error in indicator '{indicator['value']}'. "
+                f"Reason: {indicator['message']}"
+            )
+        return indicator["message_type"] in ("error", "warning")
+
+    def _remove_ioc(self, wrong_indicator: dict, indicators: list) -> list:
+        indicator_to_remove = None
+        for ioc in indicators:
+            if ioc["value"] == wrong_indicator["value"]:
+                indicator_to_remove = ioc
+                break
+        if indicator_to_remove:
+            indicators.remove(indicator_to_remove)
+        return indicators
+
     def upload_maltiverse_feed_to_crowdstrike(
         self, feed_id, action="detect", max_chunk_size=100
     ):
@@ -103,18 +121,19 @@ class MaltiverseCrowdStrikeHandler:
 
             if ret["status_code"] == 400:
                 for element in ret["body"]["resources"]:
-                    if element["message_type"] == "warning" and element[
-                        "message"
-                    ].startswith("Warning: Duplicate type:"):
-                        res_delete = self.falcon_ioc.indicator_delete(
-                            filter="value:'" + element["value"] + "'"
+                    if self._indicator_has_error(element):
+                        chunk["indicators"] = self._remove_ioc(
+                            wrong_indicator=element,
+                            indicators=chunk["indicators"],
                         )
-                        if res_delete["status_code"] == 200:
-                            print("Deleted: " + element["value"])
-                        else:
-                            print("Error deleting: " + element["value"])
-                            if "errors" in res_delete:
-                                print(res_delete["errors"])
+
+                if not chunk["indicators"]:
+                    # all indicators from chunk have errors/warnings
+                    # (they are already uploaded for example)
+                    print(f"Omitted chunk {count+1}/{number_of_chunks} of {feed_id=}")
+                    continue
+
+                # try again without wrong iocs
                 time.sleep(10)
                 ret = self.falcon.command(
                     "indicator_create_v1",
@@ -122,7 +141,12 @@ class MaltiverseCrowdStrikeHandler:
                     ignore_warnings=True,
                     body=chunk,
                 )
+
+            if ret["status_code"] == 400:
+                print(f"\n *** ERROR uploading chunk #{count+1} of {feed_id=} ***\n")
                 print(json.dumps(ret, indent=4))
+            else:
+                print(f"Uploaded chunk {count+1}/{number_of_chunks} of {feed_id=}")
 
             ret_array.append(ret)
         return ret_array
@@ -269,10 +293,9 @@ if __name__ == "__main__":
         print(json.dumps(res, indent=4))
 
     if arguments.feed_id:
-        res = handler.upload_maltiverse_feed_to_crowdstrike(
+        handler.upload_maltiverse_feed_to_crowdstrike(
             arguments.feed_id, action=arguments.action
         )
-        print(json.dumps(res, indent=4))
 
     if not arguments.delete_expired and not arguments.feed_id:
         print("No uploads were performed, use --feed-id to select a feed to upload")
