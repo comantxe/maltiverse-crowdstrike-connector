@@ -74,8 +74,6 @@ class MaltiverseCrowdStrikeHandler:
                 if time_difference > timedelta(hours=1):
                     # skip the element as it is older than one hour ago
                     continue
-                else:
-                    print(modification_time)
 
             objs = handler.convert_obj_maltiverse_to_crowdstrike(
                 element, action=action, tag=[feed_id]
