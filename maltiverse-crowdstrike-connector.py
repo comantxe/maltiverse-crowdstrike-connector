@@ -12,7 +12,7 @@ import argparse
 import requests
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from falconpy import APIHarnessV2, IOC
 
 
@@ -36,7 +36,7 @@ class MaltiverseCrowdStrikeHandler:
         """
         Gets a feed metadata from Maltiverse given its Id.
         """
-        url = f"{self.base_url}/collection/{feed_id}"
+        url = f"{self.base_url}/feed/{feed_id}"
         response = requests.get(url, headers=self.headers)
         return response.json()
 
@@ -44,11 +44,13 @@ class MaltiverseCrowdStrikeHandler:
         """
         Downloads a feed from Maltiverse given its Id.
         """
-        url = f"{self.base_url}/collection/{feed_id}/download"
+        url = f"{self.base_url}/feed/{feed_id}/download"
         response = requests.get(url, headers=self.headers)
         return response.json()
 
-    def convert_maltiverse_feed_to_crowdstrike(self, feed_id, action="detect"):
+    def convert_maltiverse_feed_to_crowdstrike(
+        self, feed_id, action="detect", upload_last_hour=False
+    ):
         """
         Converts a maltiverse feed in its original format to a Crowdstrike format
         """
@@ -57,6 +59,24 @@ class MaltiverseCrowdStrikeHandler:
 
         cs_indicators = []
         for element in raw_maltiverse_feed:
+            if upload_last_hour:
+                modification_time = datetime.strptime(
+                    element["modification_time"], "%Y-%m-%d %H:%M:%S"
+                ).replace(tzinfo=timezone.utc)
+
+                # Get the current time
+                current_time = datetime.now(timezone.utc)
+
+                # Calculate the time difference
+                time_difference = current_time - modification_time
+
+                # Check if the difference is greater than one hour
+                if time_difference > timedelta(hours=1):
+                    # skip the element as it is older than one hour ago
+                    continue
+                else:
+                    print(modification_time)
+
             objs = handler.convert_obj_maltiverse_to_crowdstrike(
                 element, action=action, tag=[feed_id]
             )
@@ -88,7 +108,11 @@ class MaltiverseCrowdStrikeHandler:
         return indicators
 
     def upload_maltiverse_feed_to_crowdstrike(
-        self, feed_id, action="detect", max_chunk_size=100
+        self,
+        feed_id,
+        action="detect",
+        max_chunk_size=100,
+        upload_last_hour=False,
     ):
         """
         Given its FEED_ID Uploads a Maltiverse feed to Crowdstrike
@@ -96,7 +120,9 @@ class MaltiverseCrowdStrikeHandler:
 
         ret_array = []
 
-        full_feed = self.convert_maltiverse_feed_to_crowdstrike(feed_id, action=action)
+        full_feed = self.convert_maltiverse_feed_to_crowdstrike(
+            feed_id, action=action, upload_last_hour=upload_last_hour
+        )
 
         number_of_ioc = len(full_feed["indicators"])
         number_of_chunks = int(number_of_ioc / max_chunk_size)
@@ -260,7 +286,13 @@ if __name__ == "__main__":
         required=False,
         help="Specifies Crowdstrike Base URL.",
     )
-
+    parser.add_argument(
+        "--upload-last-hour",
+        dest="upload_last_hour",
+        required=False,
+        default=False,
+        help="Updates Crowdstrike with the last hour updates of the feed",
+    )
     parser.add_argument(
         "--feed_id",
         dest="feed_id",
@@ -294,8 +326,10 @@ if __name__ == "__main__":
 
     if arguments.feed_id:
         handler.upload_maltiverse_feed_to_crowdstrike(
-            arguments.feed_id, action=arguments.action
+            arguments.feed_id,
+            action=arguments.action,
+            upload_last_hour=arguments.upload_last_hour,
         )
 
     if not arguments.delete_expired and not arguments.feed_id:
-        print("No uploads were performed, use --feed-id to select a feed to upload")
+        print("No uploads were performed, use --feed_id to select a feed to upload")
