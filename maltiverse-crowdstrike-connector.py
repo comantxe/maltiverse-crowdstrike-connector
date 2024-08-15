@@ -287,8 +287,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--upload-last-hour",
         dest="upload_last_hour",
-        required=False,
-        default=False,
+        action="store_true",
         help="Updates Crowdstrike with the last hour updates of the feed",
     )
     parser.add_argument(
