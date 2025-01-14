@@ -12,10 +12,11 @@ import argparse
 import requests
 import json
 import time
+import math
 from datetime import datetime, timedelta, timezone
 from falconpy import APIHarnessV2, IOC
 
-
+VALID_ACTIONS = ["no_action", "allow", "prevent_no_ui", "prevent", "detect"]
 IOC_EXPIRATION_DAYS = 1
 
 
@@ -123,7 +124,7 @@ class MaltiverseCrowdStrikeHandler:
         )
 
         number_of_ioc = len(full_feed["indicators"])
-        number_of_chunks = int(number_of_ioc / max_chunk_size)
+        number_of_chunks = math.ceil(number_of_ioc / max_chunk_size)
 
         for count in range(0, number_of_chunks):
             first_element = count * max_chunk_size
@@ -306,7 +307,12 @@ if __name__ == "__main__":
         "--action",
         dest="action",
         default="detect",
-        help="Specifies the action that applies to the uploading indicators. Default: detect",
+        choices=VALID_ACTIONS,  # <--- Restrict to valid enum
+        help=(
+            "Specifies the action that applies to the uploading indicators. "
+            "Must be one of: no_action, allow, prevent_no_ui, prevent, detect. "
+            "Default: detect"
+        ),
     )
     arguments = parser.parse_args()
 
